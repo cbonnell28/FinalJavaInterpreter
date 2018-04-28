@@ -1,14 +1,14 @@
 ; If you are using racket instead of scheme, uncomment these two lines, comment the (load "simpleParser.scm") and uncomment the (require "simpleParser.scm")
 ; #lang racket
 ; (require "simpleParser.scm")
-(load "functionParser.scm")
+(load "classParser.scm")
 
 ; The functions that start interpret-...  all return the current environment.
 ; The functions that start eval-...  all return a value
 
 ; The main function.  Calls parser to get the parse tree and interprets it with a new environment.  The returned value is in the environment.
 (define interpret
-  (lambda (file)
+  (lambda (file class-name)
     (scheme->language
      (eval-funcall main-method (interpret-statement-list (parser file) (newenvironment) invalid-return invalid-break invalid-continue invalid-throw) invalid-throw))))
 
@@ -23,6 +23,7 @@
 (define interpret-statement
   (lambda (statement environment return break continue throw)
     (cond
+      ((eq? 'class (statement-type statement)) (interpret-class statement environment))
       ((eq? 'return (statement-type statement)) (interpret-return statement environment return throw))
       ((eq? 'function (statement-type statement)) (interpret-function statement environment))
       ((eq? 'funcall (statement-type statement)) (interpret-funcall (eval-funcall statement environment throw) environment))
@@ -36,6 +37,11 @@
       ((eq? 'throw (statement-type statement)) (interpret-throw statement environment throw))
       ((eq? 'try (statement-type statement)) (begin (set-box! throwenv environment)(interpret-try statement environment return break continue throw)))
       (else (myerror "Unknown statement:" (statement-type statement))))))
+
+; Executes the class then returns the closure
+(define interpret-class
+  (lambda (statement environment)
+    (insert (get-class-name statement) (get-class-closure statement) environment)))
 
 ; Executes the function then returns the state
 (define interpret-funcall
@@ -219,6 +225,8 @@
 (define throwenv (box '()))
 
 ; these helper functions define the parts of the various statement types
+(define get-class-name operand1)
+(define get-class-closure operand3)
 (define statement-type operator)
 (define get-expr operand1)
 (define get-function-name operand1)
@@ -302,7 +310,7 @@
 
 (define class-closure
   (lambda (parent name)
-    (name parent (parent-methods parent) (parent-instance-names parent))))
+    (list (name parent (parent-methods parent) (parent-instance-names parent)))))
 
 (define class-name
   (lambda (class)
@@ -317,8 +325,10 @@
     (caddr class)))
 
 (define class-instance-names
-  (lambda (class))
-    (cadddr class))
+  (lambda (class)
+    (cadddr class)))
+
+;Need to use lookup
 
 (define parent-methods
   (lambda (parent)
@@ -531,4 +541,4 @@
                             (makestr (string-append str (string-append " " (symbol->string (car vals)))) (cdr vals))))))
       (error-break (display (string-append str (makestr "" vals)))))))
 
-(interpret "test.txt")
+(interpret "test.txt" "A")
