@@ -1,17 +1,25 @@
-var a = 10;
-var b = 20;
+class A {
+  var x = 6;
+  var y = 7;
 
-function bmethod() {
-  var b = 30;
-  return a + b;
+  function prod() {
+    return this.x * this.y;
+  }
+
+  function set2(a, b) {
+    x = a;
+    y = b;
+  }
 }
 
-function cmethod() {
-  var a = 40;
-  return bmethod() + a + b;
-}
+class B extends A {
+  function set1(a) {
+    set2(a, a);
+  }
 
-function main () {
-  var b = 5;
-  return cmethod() + a + b;
+  static function main () {
+    var b = new B();
+    b.set1(10);
+    return b.prod();
+  }
 }

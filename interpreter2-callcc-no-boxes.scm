@@ -12,6 +12,20 @@
     (scheme->language
      (eval-funcall main-method (interpret-statement-list (parser file) (newenvironment) invalid-return invalid-break invalid-continue invalid-throw) invalid-throw))))
 
+(define interpret-class-list
+  (lambda (statement-list environment)
+    (cond
+      ((null? statement-list) environment)
+      ((eq? 'class (statement-type (car statement-list)))
+       (interpret-class-list (cdr statement-list) (interpret-class (car statement-list) environment)))
+      (else (myerror "Invalid class syntax"))))) ; add an error, something other than a class was found
+
+(define interpret-class
+  (lambda (statement environment)
+    (insert (class-name statement)
+            (build-closure-from-list (body statement) (initial-class-closure (parent-name statement) (parent-closure (parent-name statement) environment)))
+            environment)))
+
 ; interprets a list of statements.  The environment from each statement is used for the next ones.
 (define interpret-statement-list
   (lambda (statement-list environment return break continue throw)
@@ -37,11 +51,6 @@
       ((eq? 'throw (statement-type statement)) (interpret-throw statement environment throw))
       ((eq? 'try (statement-type statement)) (begin (set-box! throwenv environment)(interpret-try statement environment return break continue throw)))
       (else (myerror "Unknown statement:" (statement-type statement))))))
-
-; Executes the class then returns the closure
-(define interpret-class
-  (lambda (statement environment)
-    (insert (get-class-name statement) (get-class-closure statement) environment)))
 
 ; Executes the function then returns the state
 (define interpret-funcall
@@ -308,37 +317,88 @@
 ; Class Closure Functions
 ;------------------------
 
+(define build-closure-from-list
+  (lambda (statement-list class-closure)
+    (if (null? statement-list)
+      class-closure
+      (build-closure-from-list (cdr statement-list) (build-closure (car statement-list) class-closure)))))
+
+(define build-closure
+  (lambda (statement class-closure)
+    (cond
+      ((or (eq? 'static-var (statement-type statement)) (eq? 'var (statement-type statement)))
+       (add-var-to-closure (var-name statement) class-closure))
+      ((or (eq? 'static-function (statement-type statement)) (eq? 'function (statement-type statement)))
+       (add-function-to-closure statement class-closure))
+      (else (myerror "Invalid syntax in class")))))
+
+(define add-var-to-closure
+  (lambda (var-name class-closure)
+    (if (exists-in-list? var-name (class-instance-names class-closure))
+      (myerror "Instance variable declared twice.")
+      (list (class-parent class-closure) (class-methods class-closure) (cons var-name (class-instance-names class-closure))))))
+
+(define add-function-to-closure
+  (lambda (statement class-closure)
+    (if (exists-in-list? (get-function-name statement) (class-method-names class-closure))
+      (myerror "Function declared twice.")
+      (list (class-parent class-closure) 
+            (add-to-frame (get-function-name statement) (get-function-closure statement) (class-methods class-closure))
+            (class-instance-names class-closure)))))
+
+(define var-name cadr)
+(define class-name cadr)
+(define body cadddr)
+
+(define parent-name
+  (lambda (statement)
+    (if (null? (caddr statement))
+      '()
+      (cadr (caddr statement)))))
+
+(define parent-closure
+  (lambda (parent-name environment)
+    (if (null? parent-name)
+        '()
+        (lookup parent-name environment))))
+
 (define class-closure
   (lambda (parent name)
     (list (name parent (parent-methods parent) (parent-instance-names parent)))))
 
-(define class-name
-  (lambda (class)
-    (car class)))
+(define initial-class-closure
+  (lambda (parent-name parent-closure)
+    (list parent-name (parent-methods parent-closure) (parent-instance-names parent-closure))))
 
 (define class-parent
   (lambda (class)
-    (cadr class)))
+    (car class)))
+
+(define class-method-names
+  (lambda (class)
+    (car (class-methods class))))
+
+(define class-method-names
+  (lambda (class)
+    (cadr (class-methods class))))
 
 (define class-methods
   (lambda (class)
-    (caddr class)))
+    (cadr class)))
 
 (define class-instance-names
   (lambda (class)
-    (cadddr class)))
-
-;Need to use lookup
+    (caddr class)))
 
 (define parent-methods
   (lambda (parent)
-    (if (eq? parent 'null)
-      newframe
+    (if (null? parent)
+      (newframe)
       (class-methods parent))))
 
 (define parent-instance-names
   (lambda (parent)
-    (if (eq? parent 'null)
+    (if (null? parent)
       '()
       (class-instance-names parent))))
 
@@ -541,4 +601,4 @@
                             (makestr (string-append str (string-append " " (symbol->string (car vals)))) (cdr vals))))))
       (error-break (display (string-append str (makestr "" vals)))))))
 
-(interpret "test.txt" "A")
+(interpret-class-list (parser "test.txt") (newenvironment))
