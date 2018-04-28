@@ -297,8 +297,60 @@
     (cons (function-frame statement environment throw) (get-static-link (cadr statement) environment))))
 
 ;------------------------
-; Environment/State Functions
+; Class Closure Functions
 ;------------------------
+
+(define class-closure
+  (lambda (parent name)
+    (name parent (parent-methods parent) (parent-instance-names parent))))
+
+(define class-name
+  (lambda (class)
+    (car class)))
+
+(define class-parent
+  (lambda (class)
+    (cadr class)))
+
+(define class-methods
+  (lambda (class)
+    (caddr class)))
+
+(define class-instance-names
+  (lambda (class))
+    (cadddr class))
+
+(define parent-methods
+  (lambda (parent)
+    (if (eq? parent 'null)
+      newframe
+      (class-methods parent))))
+
+(define parent-instance-names
+  (lambda (parent)
+    (if (eq? parent 'null)
+      '()
+      (class-instance-names parent))))
+
+;--------------------------
+; Instance Closure Function
+;--------------------------
+
+(define instance-closure
+  (lambda (class instance-values)
+    (list class instance-values)))
+
+(define instance-class
+  (lambda (instance)
+    (car instance)))
+
+(define instance-values
+  (lambda (instance)
+    (cadr instance)))
+
+;----------------------------
+; Environment/State Functions
+;----------------------------
 
 ; create a new empty environment
 (define newenvironment
