@@ -5,7 +5,6 @@
 
 ; The functions that start interpret-...  all return the current environment.
 ; The functions that start eval-...  all return a value
-; Added for testing purposes
 
 ; The main function.  Calls parser to get the parse tree and interprets it with a new environment.  The returned value is in the environment.
 (define interpret
@@ -53,6 +52,16 @@
       ((eq? 'try (statement-type statement)) (begin (set-box! throwenv environment)(interpret-try statement environment return break continue throw)))
       (else (myerror "Unknown statement:" (statement-type statement))))))
 
+; Calls the return continuation with the given expression value
+(define interpret-return
+  (lambda (statement environment return throw)
+    (return (eval-expression (get-expr statement) environment throw))))
+
+; Adds the function binding to the environment
+(define interpret-function
+  (lambda (statement environment)
+    (insert (get-function-name statement) (get-function-closure statement) environment)))
+
 ; Executes the function then returns the state
 (define interpret-funcall
   (lambda (function environment)
@@ -64,16 +73,6 @@
     (call/cc
       (lambda (return)
         (interpret-statement-list (function-body statement environment) (push-function-frame statement environment throw) return invalid-break invalid-continue throw)))))
-
-; Calls the return continuation with the given expression value
-(define interpret-return
-  (lambda (statement environment return throw)
-    (return (eval-expression (get-expr statement) environment throw))))
-
-; Adds the function binding to the environment.
-(define interpret-function
-  (lambda (statement environment)
-    (insert (get-function-name statement) (get-function-closure statement) environment)))
 
 ; Adds a new variable binding to the environment.  There may be an assignment with the variable
 (define interpret-declare
@@ -328,16 +327,25 @@
   (lambda (statement class-closure)
     (cond
       ((or (eq? 'static-var (statement-type statement)) (eq? 'var (statement-type statement)))
-       (add-var-to-closure (var-name statement) class-closure))
+       (add-var-to-closure statement class-closure))
       ((or (eq? 'static-function (statement-type statement)) (eq? 'function (statement-type statement)))
        (add-function-to-closure statement class-closure))
       (else (myerror "Invalid syntax in class")))))
 
 (define add-var-to-closure
-  (lambda (var-name class-closure)
-    (if (exists-in-list? var-name (class-instance-names class-closure))
+  (lambda (statement class-closure)
+    (if (exists-in-list? (var-name statement) (class-instance-names class-closure))
       (myerror "Instance variable declared twice.")
-      (list (class-parent class-closure) (class-methods class-closure) (cons var-name (class-instance-names class-closure))))))
+      (list (class-parent class-closure)
+            (class-methods class-closure)
+            (cons (var-name statement) (class-instance-names class-closure))
+            (add-var-val statement class-closure)))))
+
+(define add-var-val
+  (lambda (statement class-closure)
+    (if (has-var-value? statement)
+      (cons (var-val statement) (class-default-values class-closure))
+      (cons 'novalue (class-default-values class-closure)))))
 
 (define add-function-to-closure
   (lambda (statement class-closure)
@@ -345,8 +353,15 @@
       (myerror "Function declared twice.")
       (list (class-parent class-closure) 
             (add-to-frame (get-function-name statement) (get-function-closure statement) (class-methods class-closure))
-            (class-instance-names class-closure)))))
+            (class-instance-names class-closure)
+            (class-default-values class-closure)))))
 
+(define has-var-value?
+  (lambda (statement)
+    (if (null? (cddr statement))
+      #f
+      #t)))
+(define var-val caddr)
 (define var-name cadr)
 (define class-name cadr)
 (define body cadddr)
@@ -363,13 +378,9 @@
         '()
         (lookup parent-name environment))))
 
-(define class-closure
-  (lambda (parent name)
-    (list (name parent (parent-methods parent) (parent-instance-names parent)))))
-
 (define initial-class-closure
   (lambda (parent-name parent-closure)
-    (list parent-name (parent-methods parent-closure) (parent-instance-names parent-closure))))
+    (list parent-name (parent-methods parent-closure) (parent-instance-names parent-closure) (parent-default-values parent-closure))))
 
 (define class-parent
   (lambda (class)
@@ -391,6 +402,10 @@
   (lambda (class)
     (caddr class)))
 
+(define class-default-values
+  (lambda (class)
+    (cadddr class)))
+
 (define parent-methods
   (lambda (parent)
     (if (null? parent)
@@ -402,6 +417,12 @@
     (if (null? parent)
       '()
       (class-instance-names parent))))
+
+(define parent-default-values
+  (lambda (parent)
+    (if (null? parent)
+      '()
+      (class-default-values parent))))
 
 ;--------------------------
 ; Instance Closure Function
