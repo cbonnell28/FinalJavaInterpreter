@@ -175,9 +175,14 @@
       ((number? expr) expr)
       ((eq? expr 'true) #t)
       ((eq? expr 'false) #f)
+      ((eq? (statement-type expr) 'new) (build-instance-closure expr environment))
       ((not (list? expr)) (unbox (lookup expr environment)))
       ((eq? 'funcall (operator expr)) (eval-funcall expr environment throw)) ; interpret-funcall is not implemented yet
       (else (eval-operator expr environment throw)))))
+
+(define build-instance-closure
+  (lambda (expr environment)
+    (list (get-class-name expr) (class-default-values (lookup (get-class-name expr) environment)))))
 
 (define eval-operator
   (lambda (expr environment throw)
@@ -626,4 +631,4 @@
                             (makestr (string-append str (string-append " " (symbol->string (car vals)))) (cdr vals))))))
       (error-break (display (string-append str (makestr "" vals)))))))
 
-(interpret-class-list (parser "test.txt") (newenvironment))
+(interpret-statement '(var y 7) (interpret-class-list (parser "test.txt") (newenvironment)) '() '() '() '())
