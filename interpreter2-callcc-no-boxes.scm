@@ -5,6 +5,7 @@
 
 ; The functions that start interpret-...  all return the current environment.
 ; The functions that start eval-...  all return a value
+; Added for testing purposes
 
 ; The main function.  Calls parser to get the parse tree and interprets it with a new environment.  The returned value is in the environment.
 (define interpret
