@@ -10,7 +10,7 @@
 (define interpret
   (lambda (file class-name)
     (scheme->language
-     (eval-funcall main-method (interpret-statement-list (parser file) (newenvironment) invalid-return invalid-break invalid-continue invalid-throw) invalid-throw))))
+     (eval-funcall main-method (get-class-main class-name (interpret-class-list (parser "test.txt") (newenvironment))) invalid-throw))))
 
 (define interpret-class-list
   (lambda (statement-list environment)
@@ -235,6 +235,9 @@
 
 ; these helper functions define the parts of the various statement types
 (define get-class-name operand1)
+(define get-class-main
+  (lambda (class-name env)
+    (cdr (lookup class-name env))))
 (define get-class-closure operand3)
 (define statement-type operator)
 (define get-expr operand1)
