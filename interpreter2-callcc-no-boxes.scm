@@ -39,7 +39,7 @@
     (cond
       ((eq? 'class (statement-type statement)) (interpret-class statement environment))
       ((eq? 'return (statement-type statement)) (interpret-return statement environment return throw))
-      ((eq? 'function (statement-type statement)) (interpret-function statement environment))
+      ((eq? 'function (statement-type statement)) (interpret-function (add-this statement) environment))
       ((eq? 'funcall (statement-type statement)) (interpret-funcall (eval-funcall statement environment throw) environment))
       ((eq? 'var (statement-type statement)) (interpret-declare statement environment throw))
       ((eq? '= (statement-type statement)) (interpret-assign statement environment throw))
