@@ -23,7 +23,7 @@
 (define interpret-class
   (lambda (statement environment)
     (insert (class-name statement)
-            (build-closure-from-list (body statement) (initial-class-closure (parent-name statement) (parent-closure (parent-name statement) environment)))
+            (build-closure-from-list (body statement) (initial-class-closure (parent-name statement)))
             environment)))
 
 ; interprets a list of statements.  The environment from each statement is used for the next ones.
@@ -376,15 +376,9 @@
       '()
       (cadr (caddr statement)))))
 
-(define parent-closure
-  (lambda (parent-name environment)
-    (if (null? parent-name)
-        '()
-        (lookup parent-name environment))))
-
 (define initial-class-closure
-  (lambda (parent-name parent-closure)
-    (list parent-name (parent-methods parent-closure) (parent-instance-names parent-closure) (parent-default-values parent-closure))))
+  (lambda (parent-name)
+    (list parent-name (newframe) '() '())))
 
 (define class-parent
   (lambda (class)
@@ -410,24 +404,6 @@
   (lambda (class)
     (cadddr class)))
 
-(define parent-methods
-  (lambda (parent)
-    (if (null? parent)
-      (newframe)
-      (class-methods parent))))
-
-(define parent-instance-names
-  (lambda (parent)
-    (if (null? parent)
-      '()
-      (class-variable-names parent))))
-
-(define parent-default-values
-  (lambda (parent)
-    (if (null? parent)
-      '()
-      (class-default-values parent))))
-
 ;--------------------------
 ; Instance Closure Function
 ;--------------------------
@@ -442,11 +418,11 @@
 
 (define instance-class
   (lambda (instance)
-    (car (unbox instance))))
+    (car instance)))
 
 (define instance-values
   (lambda (instance)
-    (cadr (unbox instance))))
+    (cadr instance)))
 
 ;----------------------------
 ; Environment/State Functions
@@ -505,21 +481,70 @@
           (myerror "error: variable without an assigned value:" var)
           value))))
 
+;;;; Lookup, Declare, and Update non-static fields ;;;;
+
+(define exists-in-class?
+  (lambda (var class-name environment)
+    (exists-in-class-closure? var (lookup class-name environment) environment)))
+
+(define exists-in-class-closure?
+  (lambda (var class-closure environment)
+    (if (exists-in-list? var (class-variable-names class-closure))
+        #t
+        (exists-in-parent? var class-closure environment))))
+
+(define exists-in-parent?
+  (lambda (var class-closure environment)
+    (if (null? (class-parent class-closure))
+        #f
+        (exists-in-class? var (class-parent class-closure) environment))))
+
+; Lookup method
 (define lookup-in-instance
   (lambda (var instance-name environment)
-    (lookup-in-instance-closure var (lookup instance-name environment) environment)))
+    (if (exists-in-class? var (instance-class (unbox (lookup instance-name environment))) environment)
+        (value-in-instance var (unbox (lookup instance-name environment)) environment)
+        (myerror "Field name does not exist in instance"))))
 
-(define lookup-in-instance-closure
+(define value-in-instance
   (lambda (var instance-closure environment)
-    (lookup-in-closure var (lookup (instance-class instance-closure) environment) instance-closure)))
+    (value-in-closure var (lookup (instance-class instance-closure) environment) instance-closure environment)))
 
-(define lookup-in-closure
-  (lambda (var class-closure instance-closure)
-    (lookup-in-frame var (closure-frame class-closure instance-closure))))
+(define value-in-closure
+  (lambda (var class-closure instance-closure environment)
+    (value-in-heirarchy var (class-parent class-closure) (class-variable-names class-closure) (instance-values instance-closure) environment)))
 
-(define closure-frame
-  (lambda (class-closure instance-closure)
-    (list (class-variable-names class-closure) (instance-values instance-closure))))
+(define value-in-heirarchy
+  (lambda (var parent-name variable-names variable-values environment)
+    (cond
+      ((null? variable-names)
+       (value-in-heirarchy var (parent-class (lookup parent-name environment)) (class-variable-names (lookup parent-name environment)) instance-values environment))
+      ((eq? var (car variable-names)) (car variable-values))
+      (else (value-in-heirarchy var parent-name (cdr variable-names) (cdr variable-values) environment)))))
+
+; Update method
+(define update-in-instance
+  (lambda (var val instance-name environment)
+    (update instance-name (update-instance-closure var val (unbox (lookup instance-name environment)) environment) environment)))
+
+(define update-instance-closure
+ (lambda (var val instance-closure environment)
+   (if (exists-in-class? var (instance-class instance-closure) environment)
+       (list (instance-class instance-closure)
+             (update-instance-value var val (lookup (instance-class instance-closure) environment) instance-closure environment))
+       (myerror "Field name does not exist in instance"))))
+
+(define update-instance-value
+ (lambda (var val class-closure instance-closure environment)
+   (update-instance-value-w-parent var val (class-parent class-closure) (class-variable-names class-closure) (instance-values instance-closure) environment)))
+
+(define update-instance-value-w-parent
+  (lambda (var val parent-name names values environment)
+    (cond
+      ((null? names)
+       (update-instance-value-w-parent var val (parent-class (lookup parent-name environment)) (class-variable-names (lookup parent-name environment)) values environment))
+      ((eq? var (car names)) (cons val (cdr values)))
+      (else (cons (car values) (update-instance-value-w-parent var val parent-name (cdr names) (cdr values) environment))))))
 
 ; Return the value bound to a variable in the environment
 (define lookup-in-env
