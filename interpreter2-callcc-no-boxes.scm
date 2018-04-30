@@ -270,6 +270,33 @@
 ; Defines the main method call
 (define main-method '(funcall main))
 
+(define determine-function-class
+  (lambda (instance-closure function-name environment)
+    (function-class-from-closure (lookup (instance-class instance-closure) environment) (instance-class instance-closure) function-name environment)))
+
+(define function-class-from-closure
+  (lambda (class-closure current-class function-name environment)
+    (find-function-class (class-parent class-closure) current-class (class-function-names class-closure) function-name environment)))
+
+(define find-function-class
+  (lambda (parent-class current-class function-list function-name environment)
+    (cond
+      ((null? function-list) (update-finder-to-closure parent-class function-name environment))
+      ((eq? (car function-list) function-name) current-class)
+      (else (find-function-class parent-class current-class (cdr function-list) function-name environment)))))
+
+(define update-finder-to-closure
+  (lambda (current-class function-name environment)
+    (if (null? current-class)
+        (myerror "Function not found")
+        (update-function-finder (lookup current-class environment) current-class function-name environment))))
+
+(define update-function-finder
+  (lambda (class-closure current-class function-name environment)
+    (if (null? current-class)
+        (myerror "Function not found")
+        (find-function-class (class-parent class-closure) current-class (class-function-names class-closure) function-name environment))))
+
 (define function-body
   (lambda (statement environment)
     (cadr (lookup (cadr statement) environment))))
@@ -352,7 +379,7 @@
 
 (define add-function-to-closure
   (lambda (statement class-closure)
-    (if (exists-in-list? (get-function-name statement) (class-method-names class-closure))
+    (if (exists-in-list? (get-function-name statement) (class-function-names class-closure))
       (myerror "Function declared twice.")
       (list (class-parent class-closure) 
             (add-to-frame (get-function-name statement) (get-function-closure statement) (class-methods class-closure))
@@ -383,7 +410,7 @@
   (lambda (class)
     (car class)))
 
-(define class-method-names
+(define class-function-names
   (lambda (class)
     (car (class-methods class))))
 
@@ -517,7 +544,7 @@
   (lambda (var parent-name variable-names variable-values environment)
     (cond
       ((null? variable-names)
-       (value-in-heirarchy var (parent-class (lookup parent-name environment)) (class-variable-names (lookup parent-name environment)) instance-values environment))
+       (value-in-heirarchy var (class-parent (lookup parent-name environment)) (class-variable-names (lookup parent-name environment)) instance-values environment))
       ((eq? var (car variable-names)) (car variable-values))
       (else (value-in-heirarchy var parent-name (cdr variable-names) (cdr variable-values) environment)))))
 
@@ -541,7 +568,7 @@
   (lambda (var val parent-name names values environment)
     (cond
       ((null? names)
-       (update-instance-value-w-parent var val (parent-class (lookup parent-name environment)) (class-variable-names (lookup parent-name environment)) values environment))
+       (update-instance-value-w-parent var val (class-parent (lookup parent-name environment)) (class-variable-names (lookup parent-name environment)) values environment))
       ((eq? var (car names)) (cons val (cdr values)))
       (else (cons (car values) (update-instance-value-w-parent var val parent-name (cdr names) (cdr values) environment))))))
 
@@ -670,5 +697,3 @@
                             str
                             (makestr (string-append str (string-append " " (symbol->string (car vals)))) (cdr vals))))))
       (error-break (display (string-append str (makestr "" vals)))))))
-
-(lookup-in-instance 'x 'newA (interpret-statement '(var newA (new A)) (interpret-class-list (parser "test.txt") (newenvironment)) '() '() '() '()))
