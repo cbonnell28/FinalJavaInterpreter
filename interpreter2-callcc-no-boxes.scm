@@ -1,8 +1,10 @@
+(load "classParser.scm")
+
 ; The main function.  Calls parser to get the parse tree and interprets it with a new environment.  The returned value is in the environment.
 (define interpret
   (lambda (file class-name)
     (scheme->language
-     (eval-funcall main-method (get-class-main class-name (interpret-class-list (parser "test.txt") (newenvironment))) invalid-throw))))
+     (eval-funcall main-method (insert 'main (car (cadar (get-class-main class-name (interpret-class-list (parser "test.txt") (newenvironment))))) (interpret-class-list (parser "test.txt") (newenvironment))) invalid-throw))))
 
 (define interpret-class-list
   (lambda (statement-list environment)
@@ -65,6 +67,10 @@
     (call/cc
       (lambda (return)
         (interpret-statement-list (function-body statement environment) (push-function-frame statement environment throw) return invalid-break invalid-continue throw)))))
+
+(define eval-dot
+  (lambda (statement environment throw)
+    (eval-expression (lookup-in-instance (caddr statement) (cadr statement) environment) environment throw)))
 
 ; Adds a new variable binding to the environment.  There may be an assignment with the variable
 (define interpret-declare
@@ -167,6 +173,7 @@
       ((number? expr) expr)
       ((eq? expr 'true) #t)
       ((eq? expr 'false) #f)
+      ((eq? 'dot (operator expr)) (eval-dot expr environment throw))
       ((eq? (statement-type expr) 'new) (build-instance-closure expr environment))
       ((eq? 'funcall (operator expr)) (eval-funcall expr environment throw)) ; interpret-funcall is not implemented yet
       ((not (list? expr)) (unbox (lookup expr environment)))
@@ -300,9 +307,9 @@
 ; Verifies that the parameter count matches the function call
 (define matching-parameters?
   (lambda (names values)
-    (if (null? names)
-      (null? values)
-      (matching-parameters? (cdr names) (cdr values)))))
+    (if (nor (null? names) (null? values))
+        (matching-parameters? (cdr names) (cdr values))
+        (and (null? names) (null? values)))))
 
 ; Returns the function frame and the environment of the static link
 (define push-function-frame
