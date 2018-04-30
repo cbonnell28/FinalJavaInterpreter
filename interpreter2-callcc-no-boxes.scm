@@ -1,11 +1,3 @@
-; If you are using racket instead of scheme, uncomment these two lines, comment the (load "simpleParser.scm") and uncomment the (require "simpleParser.scm")
-; #lang racket
-; (require "simpleParser.scm")
-(load "classParser.scm")
-
-; The functions that start interpret-...  all return the current environment.
-; The functions that start eval-...  all return a value
-
 ; The main function.  Calls parser to get the parse tree and interprets it with a new environment.  The returned value is in the environment.
 (define interpret
   (lambda (file class-name)
