@@ -10,10 +10,10 @@
 (define interpret
   (lambda (file class-name)
     (scheme->language
-     (eval-funcall main-method (interpret-statement-list (parser file) (newenvironment) invalid-return invalid-break invalid-continue invalid-throw) invalid-throw))))
+     (eval-funcall main-method (interpret-statement-list (parser file) (newenvironment) invalid-return invalid-break invalid-continue invalid-throw invalid-current-type) invalid-throw))))
 
 (define interpret-class-list
-  (lambda (statement-list environment)
+  (lambda (statement-list environment current-type)
     (cond
       ((null? statement-list) environment)
       ((eq? 'class (statement-type (car statement-list)))
@@ -21,21 +21,21 @@
       (else (myerror "Invalid class syntax"))))) ; add an error, something other than a class was found
 
 (define interpret-class
-  (lambda (statement environment)
+  (lambda (statement environment current-type)
     (insert (class-name statement)
             (build-closure-from-list (body statement) (initial-class-closure (parent-name statement) (parent-closure (parent-name statement) environment)))
             environment)))
 
 ; interprets a list of statements.  The environment from each statement is used for the next ones.
 (define interpret-statement-list
-  (lambda (statement-list environment return break continue throw)
+  (lambda (statement-list environment return break continue throw current-type)
     (if (null? statement-list)
         environment
-        (interpret-statement-list (cdr statement-list) (interpret-statement (car statement-list) environment return break continue throw) return break continue throw))))
+        (interpret-statement-list (cdr statement-list) (interpret-statement (car statement-list) environment return break continue throw current-type) return break continue throw current-type))))
 
 ; interpret a statement in the environment with continuations for return, break, continue, throw
 (define interpret-statement
-  (lambda (statement environment return break continue throw)
+  (lambda (statement environment return break continue throw current-type)
     (cond
       ((eq? 'class (statement-type statement)) (interpret-class statement environment current-type))
       ((eq? 'return (statement-type statement)) (interpret-return statement environment return throw current-type))
@@ -595,6 +595,10 @@
 ; ERROR FUNCTIONS ;
 ;;;;;;;;;;;;;;;;;;;
 
+(define invalid-current-type
+  (lambda (env)
+    (myerror "invald current type")))
+
 (define invalid-return
   (lambda (env)
     (myerror "Return called outside a function")))
@@ -623,4 +627,5 @@
                             (makestr (string-append str (string-append " " (symbol->string (car vals)))) (cdr vals))))))
       (error-break (display (string-append str (makestr "" vals)))))))
 
-(interpret-class-list (parser "test.txt") (newenvironment))
+(interpret "test.txt" "A")
+; (interpret-class-list (parser "test.txt") (newenvironment))
