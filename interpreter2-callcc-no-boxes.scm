@@ -74,7 +74,7 @@
   (lambda (statement environment throw current-type)
     (call/cc
       (lambda (return)
-        (interpret-statement-list (function-body statement environment) (push-function-frame statement environment throw) return invalid-break invalid-continue throw current-type)))))
+        (interpret-statement-list (function-body statement environment) (push-function-frame statement environment throw current-type) return invalid-break invalid-continue throw current-type)))))
 
 (define eval-dot
   (lambda (statement environment throw current-type)
@@ -344,16 +344,16 @@
 
 ; Evaluates the parameters
 (define parameter-values
-  (lambda (parameters environment throw)
+  (lambda (parameters environment throw current-type)
     (if (null? parameters)
          '()
-         (cons (box (eval-expression (car parameters) environment throw)) (parameter-values (cdr parameters) environment throw)))))
+         (cons (box (eval-expression (car parameters) environment throw current-type)) (parameter-values (cdr parameters) environment throw current-type)))))
 
 ; Creates frame where the names are parameter names and values are parameter values
 (define function-frame
-  (lambda (statement environment throw)
-    (if (matching-parameters? (function-params statement environment) (parameter-values (parameters statement) environment throw))
-      (cons (function-params statement environment) (cons (parameter-values (parameters statement) environment throw) '()))
+  (lambda (statement environment throw current-type)
+    (if (matching-parameters? (function-params statement environment) (parameter-values (parameters statement) environment throw current-type))
+      (cons (function-params statement environment) (cons (parameter-values (parameters statement) environment throw current-type) '()))
       (myerror "Mismatched paramters"))))
 
 ; Gets the static link for a function
@@ -374,8 +374,8 @@
 
 ; Returns the function frame and the environment of the static link
 (define push-function-frame
-  (lambda (statement environment throw)
-    (cons (function-frame statement environment throw) (get-static-link (cadr statement) environment))))
+  (lambda (statement environment throw current-type)
+    (cons (function-frame statement environment throw current-type) (get-static-link (cadr statement) environment))))
 
 ;------------------------
 ; Class Closure Functions
