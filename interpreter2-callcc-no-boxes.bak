@@ -1,18 +1,16 @@
+; If you are using racket instead of scheme, uncomment these two lines, comment the (load "simpleParser.scm") and uncomment the (require "simpleParser.scm")
+; #lang racket
+; (require "simpleParser.scm")
 (load "classParser.scm")
+
+; The functions that start interpret-...  all return the current environment.
+; The functions that start eval-...  all return a value
 
 ; The main function.  Calls parser to get the parse tree and interprets it with a new environment.  The returned value is in the environment.
 (define interpret
   (lambda (file class-name)
     (scheme->language
-        (interpret-environment class-name (interpret-class-list (parser "test.txt") (newenvironment))))))
-
-(define interpret-environment
-  (lambda (class-name environment)
-    (call/cc
-     (lambda (return)
-       (interpret-statement-list (cadr (find-function-closure class-name 'main environment))
-                                  environment
-                                  return invalid-break invalid-continue invalid-throw invalid-current-type)))))
+     (eval-funcall main-method (interpret-statement-list (parser file) (newenvironment) invalid-return invalid-break invalid-continue invalid-throw) invalid-throw))))
 
 (define interpret-class-list
   (lambda (statement-list environment)
@@ -25,53 +23,43 @@
 (define interpret-class
   (lambda (statement environment)
     (insert (class-name statement)
-            (build-closure-from-list (body statement) (initial-class-closure (parent-name statement)))
+            (build-closure-from-list (body statement) (initial-class-closure (parent-name statement) (parent-closure (parent-name statement) environment)))
             environment)))
 
 ; interprets a list of statements.  The environment from each statement is used for the next ones.
 (define interpret-statement-list
-  (lambda (statement-list environment return break continue throw current-type)
+  (lambda (statement-list environment return break continue throw)
     (if (null? statement-list)
         environment
-        (interpret-statement-list (cdr statement-list) (interpret-statement (car statement-list) environment return break continue throw current-type) return break continue throw current-type))))
+        (interpret-statement-list (cdr statement-list) (interpret-statement (car statement-list) environment return break continue throw) return break continue throw))))
 
 ; interpret a statement in the environment with continuations for return, break, continue, throw
 (define interpret-statement
-  (lambda (statement environment return break continue throw current-type)
+  (lambda (statement environment return break continue throw)
     (cond
-      ((eq? 'class (statement-type statement)) (interpret-class statement environment current-type))
-      ((eq? 'return (statement-type statement)) (interpret-return statement environment return throw current-type))
-      ((eq? 'function (statement-type statement)) (interpret-function (add-this statement) environment current-type))
-      ((eq? 'funcall (statement-type statement)) (interpret-funcall (eval-funcall statement environment throw current-type) environment current-type))
-      ((eq? 'var (statement-type statement)) (interpret-declare statement environment throw current-type))
-      ((eq? '= (statement-type statement)) (interpret-assign statement environment throw current-type))
-      ((eq? 'if (statement-type statement)) (interpret-if statement environment return break continue throw current-type))
-      ((eq? 'while (statement-type statement)) (interpret-while statement environment return throw current-type))
-      ((eq? 'continue (statement-type statement)) (continue environment current-type))
-      ((eq? 'break (statement-type statement)) (break environment current-type))
-      ((eq? 'begin (statement-type statement)) (interpret-block statement environment return break continue throw current-type))
-      ((eq? 'throw (statement-type statement)) (interpret-throw statement environment throw current-type))
-      ((eq? 'try (statement-type statement)) (begin (set-box! throwenv environment)(interpret-try statement environment return break continue throw current-type)))
+      ((eq? 'class (statement-type statement)) (interpret-class statement environment))
+      ((eq? 'return (statement-type statement)) (interpret-return statement environment return throw))
+      ((eq? 'function (statement-type statement)) (interpret-function statement environment))
+      ((eq? 'funcall (statement-type statement)) (interpret-funcall (eval-funcall statement environment throw) environment))
+      ((eq? 'var (statement-type statement)) (interpret-declare statement environment throw))
+      ((eq? '= (statement-type statement)) (interpret-assign statement environment throw))
+      ((eq? 'if (statement-type statement)) (interpret-if statement environment return break continue throw))
+      ((eq? 'while (statement-type statement)) (interpret-while statement environment return throw))
+      ((eq? 'continue (statement-type statement)) (continue environment))
+      ((eq? 'break (statement-type statement)) (break environment))
+      ((eq? 'begin (statement-type statement)) (interpret-block statement environment return break continue throw))
+      ((eq? 'throw (statement-type statement)) (interpret-throw statement environment throw))
+      ((eq? 'try (statement-type statement)) (begin (set-box! throwenv environment)(interpret-try statement environment return break continue throw)))
       (else (myerror "Unknown statement:" (statement-type statement))))))
-
-(define add-this
-  (lambda (statement)
-    (list (car statement) (cadr statement) (append-this (caddr statement)) (cadddr statement))))
-
-(define append-this
-  (lambda (statement)
-    (if (null? statement)
-        (cons 'this '())
-        (cons (car statement) (append-this (cdr statement))))))
 
 ; Calls the return continuation with the given expression value
 (define interpret-return
-  (lambda (statement environment return throw current-type)
-    (return (eval-expression (get-expr statement) environment throw current-type))))
+  (lambda (statement environment return throw)
+    (return (eval-expression (get-expr statement) environment throw))))
 
 ; Adds the function binding to the environment
 (define interpret-function
-  (lambda (statement environment current-type)
+  (lambda (statement environment)
     (insert (get-function-name statement) (get-function-closure statement) environment)))
 
 ; Executes the function then returns the state
@@ -81,30 +69,26 @@
 
 ; Evaluates a function and returns the value
 (define eval-funcall
-  (lambda (statement environment throw current-type)
+  (lambda (statement environment throw)
     (call/cc
       (lambda (return)
-        (interpret-statement-list (function-body statement environment) (push-function-frame statement environment throw current-type) return invalid-break invalid-continue throw current-type)))))
-
-(define eval-dot
-  (lambda (statement environment throw current-type)
-    (eval-expression (lookup-in-instance (caddr statement) (cadr statement) environment) environment throw current-type)))
+        (interpret-statement-list (function-body statement environment) (push-function-frame statement environment throw) return invalid-break invalid-continue throw)))))
 
 ; Adds a new variable binding to the environment.  There may be an assignment with the variable
 (define interpret-declare
-  (lambda (statement environment throw current-type)
+  (lambda (statement environment throw)
     (if (exists-declare-value? statement)
-        (insert (get-declare-var statement) (box (eval-expression (get-declare-value statement) environment throw current-type)) environment)
+        (insert (get-declare-var statement) (box (eval-expression (get-declare-value statement) environment throw)) environment)
         (insert (get-declare-var statement) (box 'novalue) environment))))
 
 ; Updates the environment to add an new binding for a variable
 (define interpret-assign
-  (lambda (statement environment throw current-type)
+  (lambda (statement environment throw)
     (update (get-assign-lhs statement) (eval-expression (get-assign-rhs statement) environment throw) environment)))
 
 ; We need to check if there is an else condition.  Otherwise, we evaluate the expression and do the right thing.
 (define interpret-if
-  (lambda (statement environment return break continue throw current-type)
+  (lambda (statement environment return break continue throw)
     (cond
       ((eval-expression (get-condition statement) environment throw) (interpret-statement (get-then statement) environment return break continue throw))
       ((exists-else? statement) (interpret-statement (get-else statement) environment return break continue throw))
@@ -113,7 +97,7 @@
 
 ; Interprets a while loop.  We must create break and continue continuations for this loop
 (define interpret-while
-  (lambda (statement environment return throw current-type)
+  (lambda (statement environment return throw)
     (call/cc
      (lambda (break)
        (letrec ((loop (lambda (condition body environment)
@@ -124,7 +108,7 @@
 
 ; Interprets a block.  The break, continue, and throw continuations must be adjusted to pop the environment
 (define interpret-block
-  (lambda (statement environment return break continue throw current-type)
+  (lambda (statement environment return break continue throw)
     (pop-frame (interpret-statement-list (cdr statement)
                                          (push-frame environment)
                                          return
@@ -134,7 +118,7 @@
 
 ; We use a continuation to throw the proper value. Because we are not using boxes, the environment/state must be thrown as well so any environment changes will be kept
 (define interpret-throw
-  (lambda (statement environment throw current-type)
+  (lambda (statement environment throw)
     (throw (box (eval-expression (get-expr statement) environment throw)) (push-frame (unbox throwenv)))))
 
 ; Interpret a try-catch-finally block
@@ -160,7 +144,7 @@
 ; To interpret a try block, we must adjust  the return, break, continue continuations to interpret the finally block if any of them are used.
 ;  We must create a new throw continuation and then interpret the try block with the new continuations followed by the finally block with the old continuations
 (define interpret-try
-  (lambda (statement environment return break continue throw current-type)
+  (lambda (statement environment return break continue throw)
     (call/cc
      (lambda (jump)
        (let* ((finally-block (make-finally-block (get-finally statement)))
@@ -186,41 +170,39 @@
 
 ; Evaluates all possible boolean and arithmetic expressions, including constants and variables.
 (define eval-expression
-  (lambda (expr environment throw current-type)
+  (lambda (expr environment throw)
     (cond
       ((number? expr) expr)
       ((eq? expr 'true) #t)
       ((eq? expr 'false) #f)
       ((not (list? expr)) (unbox (lookup expr environment)))
-      ((eq? 'dot (operator expr)) (eval-dot expr environment throw current-type))
-      ((eq? (statement-type expr) 'new) (build-instance-closure expr environment))
-      ((eq? 'funcall (operator expr)) (eval-funcall expr environment throw current-type)) ; interpret-funcall is not implemented yet
-      (else (eval-operator expr environment throw current-type)))))
+      ((eq? 'funcall (operator expr)) (eval-funcall expr environment throw)) ; interpret-funcall is not implemented yet
+      (else (eval-operator expr environment throw)))))
 
 (define eval-operator
-  (lambda (expr environment throw current-type)
+  (lambda (expr environment throw)
     (cond
       ((eq? '! (operator expr)) (not (eval-expression (operand1 expr) environment throw)))
       ((and (eq? '- (operator expr)) (= 2 (length expr))) (- (eval-expression (operand1 expr) environment throw)))
-      (else (eval-binary-op2 expr (eval-expression (operand1 expr) environment throw current-type) environment throw current-type)))))
+      (else (eval-binary-op2 expr (eval-expression (operand1 expr) environment throw) environment throw)))))
 
 ; Complete the evaluation of the binary operator by evaluating the second operand and performing the operation.
 (define eval-binary-op2
-  (lambda (expr op1value environment throw current-type)
+  (lambda (expr op1value environment throw)
     (cond
-      ((eq? '+ (operator expr)) (+ op1value (eval-expression (operand2 expr) environment throw current-type)))
-      ((eq? '- (operator expr)) (- op1value (eval-expression (operand2 expr) environment throw current-type)))
-      ((eq? '* (operator expr)) (* op1value (eval-expression (operand2 expr) environment throw current-type)))
-      ((eq? '/ (operator expr)) (quotient op1value (eval-expression (operand2 expr) environment throw current-type)))
-      ((eq? '% (operator expr)) (remainder op1value (eval-expression (operand2 expr) environment throw current-type)))
-      ((eq? '== (operator expr)) (isequal op1value (eval-expression (operand2 expr) environment throw current-type)))
-      ((eq? '!= (operator expr)) (not (isequal op1value (eval-expression (operand2 expr) environment throw current-type))))
-      ((eq? '< (operator expr)) (< op1value (eval-expression (operand2 expr) environment throw current-type)))
-      ((eq? '> (operator expr)) (> op1value (eval-expression (operand2 expr) environment throw current-type)))
-      ((eq? '<= (operator expr)) (<= op1value (eval-expression (operand2 expr) environment throw current-type)))
-      ((eq? '>= (operator expr)) (>= op1value (eval-expression (operand2 expr) environment throw current-type)))
-      ((eq? '|| (operator expr)) (or op1value (eval-expression (operand2 expr) environment throw current-type)))
-      ((eq? '&& (operator expr)) (and op1value (eval-expression (operand2 expr) environment throw current-type)))
+      ((eq? '+ (operator expr)) (+ op1value (eval-expression (operand2 expr) environment throw)))
+      ((eq? '- (operator expr)) (- op1value (eval-expression (operand2 expr) environment throw)))
+      ((eq? '* (operator expr)) (* op1value (eval-expression (operand2 expr) environment throw)))
+      ((eq? '/ (operator expr)) (quotient op1value (eval-expression (operand2 expr) environment throw)))
+      ((eq? '% (operator expr)) (remainder op1value (eval-expression (operand2 expr) environment throw)))
+      ((eq? '== (operator expr)) (isequal op1value (eval-expression (operand2 expr) environment throw)))
+      ((eq? '!= (operator expr)) (not (isequal op1value (eval-expression (operand2 expr) environment throw))))
+      ((eq? '< (operator expr)) (< op1value (eval-expression (operand2 expr) environment throw)))
+      ((eq? '> (operator expr)) (> op1value (eval-expression (operand2 expr) environment throw)))
+      ((eq? '<= (operator expr)) (<= op1value (eval-expression (operand2 expr) environment throw)))
+      ((eq? '>= (operator expr)) (>= op1value (eval-expression (operand2 expr) environment throw)))
+      ((eq? '|| (operator expr)) (or op1value (eval-expression (operand2 expr) environment throw)))
+      ((eq? '&& (operator expr)) (and op1value (eval-expression (operand2 expr) environment throw)))
       (else (myerror "Unknown operator:" (operator expr))))))
 
 ; Determines if two values are equal.  We need a special test because there are both boolean and integer types.
@@ -253,9 +235,6 @@
 
 ; these helper functions define the parts of the various statement types
 (define get-class-name operand1)
-(define get-class-main
-  (lambda (class-name env)
-    (cdr (lookup class-name env))))
 (define get-class-closure operand3)
 (define statement-type operator)
 (define get-expr operand1)
@@ -286,106 +265,53 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ; Defines the main method call
-(define main-method
-  (lambda (class-name)
-    (append '(funcall) (list (list 'dot class-name 'main)))))
-
-(define determine-function-class
-  (lambda (instance-closure function-name environment)
-    (function-class-from-closure (lookup (instance-class instance-closure) environment) (instance-class instance-closure) function-name environment)))
-
-(define function-class-from-closure
-  (lambda (class-closure current-class function-name environment)
-    (find-function-class (class-parent class-closure) current-class (class-function-names class-closure) function-name environment)))
-
-(define find-function-class
-  (lambda (parent-class current-class function-list function-name environment)
-    (cond
-      ((null? function-list) (update-finder-to-closure parent-class function-name environment))
-      ((eq? (car function-list) function-name) current-class)
-      (else (find-function-class parent-class current-class (cdr function-list) function-name environment)))))
-
-(define update-finder-to-closure
-  (lambda (current-class function-name environment)
-    (if (null? current-class)
-        (myerror "Function not found")
-        (update-function-finder (lookup current-class environment) current-class function-name environment))))
-
-(define update-function-finder
-  (lambda (class-closure current-class function-name environment)
-    (if (null? current-class)
-        (myerror "Function not found")
-        (find-function-class (class-parent class-closure) current-class (class-function-names class-closure) function-name environment))))
+(define main-method '(funcall main))
 
 (define function-body
   (lambda (statement environment)
-    (cadr (function-closure statement environment))))
-    
-(define function-params
-  (lambda (statement environment)
-    (car (function-closure statement environment))))
-
-(define function-closure
-  (lambda (statement environment)
-    (find-function-closure (find-true-type (get-dot-expr statement) environment) (func-name (get-dot-expr statement)) environment)))
-
-(define find-true-type
-  (lambda (dot-expr environment)
-    (determine-function-class (find-instance-closure (instance dot-expr) environment) (func-name dot-expr) environment)))
-
-(define find-function-closure
-  (lambda (true-type function-name environment)
-    (lookup-in-frame function-name (class-function (lookup true-type environment)))))
-
-(define find-instance-closure
-  (lambda (instance environment)
-    (cond
-      ((not (list? instance)) (unbox (lookup instance environment)))
-      ((eq? 'new (car instance)) (build-instance-closure instance environment))
-      (else myerror "Idk if this can happen"))))
-
-(define get-dot-expr cadr)
-(define instance cadr)
-(define func-name caddr)
+    (cadr (lookup (cadr statement) environment))))
 
 (define parameters
   (lambda (statement)
     (cddr statement)))
 
+(define parameter-names
+  (lambda (statement environment)
+    (car (lookup (cadr statement) environment))))
+
 ; Evaluates the parameters
 (define parameter-values
-  (lambda (parameters environment throw current-type)
+  (lambda (parameters environment throw)
     (if (null? parameters)
          '()
-         (cons (box (eval-expression (car parameters) environment throw current-type)) (parameter-values (cdr parameters) environment throw current-type)))))
+         (cons (box (eval-expression (car parameters) environment throw)) (parameter-values (cdr parameters) environment throw)))))
 
 ; Creates frame where the names are parameter names and values are parameter values
 (define function-frame
-  (lambda (statement environment throw current-type)
-    (if (matching-parameters? (function-params statement environment) (append (parameter-values (parameters statement) environment throw current-type) (list(find-instance-closure (instance (get-dot-expr statement)) environment))))
-      (cons (function-params statement environment) (append (parameter-values (parameters statement) environment throw current-type) (list(find-instance-closure (instance (get-dot-expr statement)) environment))))
+  (lambda (statement environment throw)
+    (if (matching-parameters? (parameter-names statement environment) (parameter-values (parameters statement) environment throw))
+      (cons (parameter-names statement environment) (cons (parameter-values (parameters statement) environment throw) '()))
       (myerror "Mismatched paramters"))))
 
 ; Gets the static link for a function
 (define get-static-link
   (lambda (name environment)
     (cond
-      ((null? environment) (myerror "function not found: " name))
-      ((and (list? name) (null? (cdr environment))) environment)
+      ((null? environment) (myerror "function not found: " name)) 
       ((exists-in-list? name (caar environment)) environment)
       (else (get-static-link name (pop-frame environment))))))
 
 ; Verifies that the parameter count matches the function call
 (define matching-parameters?
   (lambda (names values)
-    (if (nor (null? names) (null? values))
-        (matching-parameters? (cdr names) (cdr values))
-        (and (null? names) (null? values)))))
+    (if (null? names)
+      (null? values)
+      (matching-parameters? (cdr names) (cdr values)))))
 
 ; Returns the function frame and the environment of the static link
 (define push-function-frame
-  (lambda (statement environment throw current-type)
-    (cons (function-frame statement environment throw current-type) (get-static-link (cadr statement) environment))))
+  (lambda (statement environment throw)
+    (cons (function-frame statement environment throw) (get-static-link (cadr statement) environment))))
 
 ;------------------------
 ; Class Closure Functions
@@ -402,19 +328,17 @@
     (cond
       ((or (eq? 'static-var (statement-type statement)) (eq? 'var (statement-type statement)))
        (add-var-to-closure statement class-closure))
-      ((eq? 'static-function (statement-type statement))
+      ((or (eq? 'static-function (statement-type statement)) (eq? 'function (statement-type statement)))
        (add-function-to-closure statement class-closure))
-      ((eq? 'function (statement-type statement))
-       (add-function-to-closure (add-this statement) class-closure))
       (else (myerror "Invalid syntax in class")))))
 
 (define add-var-to-closure
   (lambda (statement class-closure)
-    (if (exists-in-list? (var-name statement) (class-variable-names class-closure))
+    (if (exists-in-list? (var-name statement) (class-instance-names class-closure))
       (myerror "Instance variable declared twice.")
       (list (class-parent class-closure)
-            (class-function class-closure)
-            (cons (var-name statement) (class-variable-names class-closure))
+            (class-methods class-closure)
+            (cons (var-name statement) (class-instance-names class-closure))
             (add-var-val statement class-closure)))))
 
 (define add-var-val
@@ -425,11 +349,11 @@
 
 (define add-function-to-closure
   (lambda (statement class-closure)
-    (if (exists-in-list? (get-function-name statement) (class-function-names class-closure))
+    (if (exists-in-list? (get-function-name statement) (class-method-names class-closure))
       (myerror "Function declared twice.")
       (list (class-parent class-closure) 
-            (add-to-frame (get-function-name statement) (get-function-closure statement) (class-function class-closure))
-            (class-variable-names class-closure)
+            (add-to-frame (get-function-name statement) (get-function-closure statement) (class-methods class-closure))
+            (class-instance-names class-closure)
             (class-default-values class-closure)))))
 
 (define has-var-value?
@@ -448,27 +372,33 @@
       '()
       (cadr (caddr statement)))))
 
+(define parent-closure
+  (lambda (parent-name environment)
+    (if (null? parent-name)
+        '()
+        (lookup parent-name environment))))
+
 (define initial-class-closure
-  (lambda (parent-name)
-    (list parent-name (newframe) '() '())))
+  (lambda (parent-name parent-closure)
+    (list parent-name (parent-methods parent-closure) (parent-instance-names parent-closure) (parent-default-values parent-closure))))
 
 (define class-parent
   (lambda (class)
     (car class)))
 
-(define class-function-names
+(define class-method-names
   (lambda (class)
-    (car (class-function class))))
+    (car (class-methods class))))
 
-(define class-method-closure
+(define class-method-names
   (lambda (class)
-    (cadr (class-function class))))
+    (cadr (class-methods class))))
 
-(define class-function
+(define class-methods
   (lambda (class)
     (cadr class)))
 
-(define class-variable-names
+(define class-instance-names
   (lambda (class)
     (caddr class)))
 
@@ -476,13 +406,27 @@
   (lambda (class)
     (cadddr class)))
 
+(define parent-methods
+  (lambda (parent)
+    (if (null? parent)
+      (newframe)
+      (class-methods parent))))
+
+(define parent-instance-names
+  (lambda (parent)
+    (if (null? parent)
+      '()
+      (class-instance-names parent))))
+
+(define parent-default-values
+  (lambda (parent)
+    (if (null? parent)
+      '()
+      (class-default-values parent))))
+
 ;--------------------------
 ; Instance Closure Function
 ;--------------------------
-
-(define build-instance-closure
-  (lambda (expr environment)
-    (list (get-class-name expr) (class-default-values (lookup (get-class-name expr) environment)))))
 
 (define instance-closure
   (lambda (class instance-values)
@@ -552,71 +496,6 @@
       (if (eq? 'novalue value)
           (myerror "error: variable without an assigned value:" var)
           value))))
-
-;;;; Lookup, Declare, and Update non-static fields ;;;;
-
-(define exists-in-class?
-  (lambda (var class-name environment)
-    (exists-in-class-closure? var (lookup class-name environment) environment)))
-
-(define exists-in-class-closure?
-  (lambda (var class-closure environment)
-    (if (exists-in-list? var (class-variable-names class-closure))
-        #t
-        (exists-in-parent? var class-closure environment))))
-
-(define exists-in-parent?
-  (lambda (var class-closure environment)
-    (if (null? (class-parent class-closure))
-        #f
-        (exists-in-class? var (class-parent class-closure) environment))))
-
-; Lookup method
-(define lookup-in-instance
-  (lambda (var instance-name environment)
-    (if (exists-in-class? var (instance-class (unbox (lookup instance-name environment))) environment)
-        (value-in-instance var (unbox (lookup instance-name environment)) environment)
-        (myerror "Field name does not exist in instance"))))
-
-(define value-in-instance
-  (lambda (var instance-closure environment)
-    (value-in-closure var (lookup (instance-class instance-closure) environment) instance-closure environment)))
-
-(define value-in-closure
-  (lambda (var class-closure instance-closure environment)
-    (value-in-heirarchy var (class-parent class-closure) (class-variable-names class-closure) (instance-values instance-closure) environment)))
-
-(define value-in-heirarchy
-  (lambda (var parent-name variable-names variable-values environment)
-    (cond
-      ((null? variable-names)
-       (value-in-heirarchy var (class-parent (lookup parent-name environment)) (class-variable-names (lookup parent-name environment)) instance-values environment))
-      ((eq? var (car variable-names)) (car variable-values))
-      (else (value-in-heirarchy var parent-name (cdr variable-names) (cdr variable-values) environment)))))
-
-; Update method
-(define update-in-instance
-  (lambda (var val instance-name environment)
-    (update instance-name (update-instance-closure var val (unbox (lookup instance-name environment)) environment) environment)))
-
-(define update-instance-closure
- (lambda (var val instance-closure environment)
-   (if (exists-in-class? var (instance-class instance-closure) environment)
-       (list (instance-class instance-closure)
-             (update-instance-value var val (lookup (instance-class instance-closure) environment) instance-closure environment))
-       (myerror "Field name does not exist in instance"))))
-
-(define update-instance-value
- (lambda (var val class-closure instance-closure environment)
-   (update-instance-value-w-parent var val (class-parent class-closure) (class-variable-names class-closure) (instance-values instance-closure) environment)))
-
-(define update-instance-value-w-parent
-  (lambda (var val parent-name names values environment)
-    (cond
-      ((null? names)
-       (update-instance-value-w-parent var val (class-parent (lookup parent-name environment)) (class-variable-names (lookup parent-name environment)) values environment))
-      ((eq? var (car names)) (cons val (cdr values)))
-      (else (cons (car values) (update-instance-value-w-parent var val parent-name (cdr names) (cdr values) environment))))))
 
 ; Return the value bound to a variable in the environment
 (define lookup-in-env
@@ -716,10 +595,6 @@
 ; ERROR FUNCTIONS ;
 ;;;;;;;;;;;;;;;;;;;
 
-(define invalid-current-type
-  (lambda (env)
-    (myerror "invalid current type")))
-
 (define invalid-return
   (lambda (env)
     (myerror "Return called outside a function")))
@@ -747,4 +622,5 @@
                             str
                             (makestr (string-append str (string-append " " (symbol->string (car vals)))) (cdr vals))))))
       (error-break (display (string-append str (makestr "" vals)))))))
-(interpret "test.txt" 'A)
+
+(interpret-class-list (parser "test.txt") (newenvironment))
