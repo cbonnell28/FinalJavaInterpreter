@@ -30,10 +30,10 @@
 
 ; interprets a list of statements.  The environment from each statement is used for the next ones.
 (define interpret-statement-list
-  (lambda (statement-list environment return break continue throw)
+  (lambda (statement-list environment return break continue throw current-type)
     (if (null? statement-list)
         environment
-        (interpret-statement-list (cdr statement-list) (interpret-statement (car statement-list) environment return break continue throw) return break continue throw))))
+        (interpret-statement-list (cdr statement-list) (interpret-statement (car statement-list) environment return break continue throw current-type) return break continue throw current-type))))
 
 ; interpret a statement in the environment with continuations for return, break, continue, throw
 (define interpret-statement
@@ -57,7 +57,7 @@
 ; Calls the return continuation with the given expression value
 (define interpret-return
   (lambda (statement environment return throw current-type)
-    (return (eval-expression (get-expr statement) environment throw))))
+    (return (eval-expression (get-expr statement) environment throw current-type))))
 
 ; Adds the function binding to the environment
 (define interpret-function
@@ -74,17 +74,17 @@
   (lambda (statement environment throw current-type)
     (call/cc
       (lambda (return)
-        (interpret-statement-list (function-body statement environment) (push-function-frame statement environment throw) return invalid-break invalid-continue throw)))))
+        (interpret-statement-list (function-body statement environment) (push-function-frame statement environment throw) return invalid-break invalid-continue throw current-type)))))
 
 (define eval-dot
   (lambda (statement environment throw current-type)
-    (eval-expression (lookup-in-instance (caddr statement) (cadr statement) environment) environment throw)))
+    (eval-expression (lookup-in-instance (caddr statement) (cadr statement) environment) environment throw current-type)))
 
 ; Adds a new variable binding to the environment.  There may be an assignment with the variable
 (define interpret-declare
   (lambda (statement environment throw current-type)
     (if (exists-declare-value? statement)
-        (insert (get-declare-var statement) (box (eval-expression (get-declare-value statement) environment throw)) environment)
+        (insert (get-declare-var statement) (box (eval-expression (get-declare-value statement) environment throw current-type)) environment)
         (insert (get-declare-var statement) (box 'novalue) environment))))
 
 ; Updates the environment to add an new binding for a variable
@@ -176,41 +176,41 @@
 
 ; Evaluates all possible boolean and arithmetic expressions, including constants and variables.
 (define eval-expression
-  (lambda (expr environment throw)
+  (lambda (expr environment throw current-type)
     (cond
       ((number? expr) expr)
       ((eq? expr 'true) #t)
       ((eq? expr 'false) #f)
-      ((not (list? expr)) (unbox (lookup expr environment)))
-      ((eq? 'dot (operator expr)) (eval-dot expr environment throw))
+      ((eq? 'dot (operator expr)) (eval-dot expr environment throw current-type))
       ((eq? (statement-type expr) 'new) (build-instance-closure expr environment))
-      ((eq? 'funcall (operator expr)) (eval-funcall expr environment throw)) ; interpret-funcall is not implemented yet
-      (else (eval-operator expr environment throw)))))
+      ((eq? 'funcall (operator expr)) (eval-funcall expr environment throw current-type)) ; interpret-funcall is not implemented yet
+      ((not (list? expr)) (unbox (lookup expr environment)))
+      (else (eval-operator expr environment throw current-type)))))
 
 (define eval-operator
-  (lambda (expr environment throw)
+  (lambda (expr environment throw current-type)
     (cond
       ((eq? '! (operator expr)) (not (eval-expression (operand1 expr) environment throw)))
       ((and (eq? '- (operator expr)) (= 2 (length expr))) (- (eval-expression (operand1 expr) environment throw)))
-      (else (eval-binary-op2 expr (eval-expression (operand1 expr) environment throw) environment throw)))))
+      (else (eval-binary-op2 expr (eval-expression (operand1 expr) environment throw current-type) environment throw current-type)))))
 
 ; Complete the evaluation of the binary operator by evaluating the second operand and performing the operation.
 (define eval-binary-op2
-  (lambda (expr op1value environment throw)
+  (lambda (expr op1value environment throw current-type)
     (cond
-      ((eq? '+ (operator expr)) (+ op1value (eval-expression (operand2 expr) environment throw)))
-      ((eq? '- (operator expr)) (- op1value (eval-expression (operand2 expr) environment throw)))
-      ((eq? '* (operator expr)) (* op1value (eval-expression (operand2 expr) environment throw)))
-      ((eq? '/ (operator expr)) (quotient op1value (eval-expression (operand2 expr) environment throw)))
-      ((eq? '% (operator expr)) (remainder op1value (eval-expression (operand2 expr) environment throw)))
-      ((eq? '== (operator expr)) (isequal op1value (eval-expression (operand2 expr) environment throw)))
-      ((eq? '!= (operator expr)) (not (isequal op1value (eval-expression (operand2 expr) environment throw))))
-      ((eq? '< (operator expr)) (< op1value (eval-expression (operand2 expr) environment throw)))
-      ((eq? '> (operator expr)) (> op1value (eval-expression (operand2 expr) environment throw)))
-      ((eq? '<= (operator expr)) (<= op1value (eval-expression (operand2 expr) environment throw)))
-      ((eq? '>= (operator expr)) (>= op1value (eval-expression (operand2 expr) environment throw)))
-      ((eq? '|| (operator expr)) (or op1value (eval-expression (operand2 expr) environment throw)))
-      ((eq? '&& (operator expr)) (and op1value (eval-expression (operand2 expr) environment throw)))
+      ((eq? '+ (operator expr)) (+ op1value (eval-expression (operand2 expr) environment throw current-type)))
+      ((eq? '- (operator expr)) (- op1value (eval-expression (operand2 expr) environment throw current-type)))
+      ((eq? '* (operator expr)) (* op1value (eval-expression (operand2 expr) environment throw current-type)))
+      ((eq? '/ (operator expr)) (quotient op1value (eval-expression (operand2 expr) environment throw current-type)))
+      ((eq? '% (operator expr)) (remainder op1value (eval-expression (operand2 expr) environment throw current-type)))
+      ((eq? '== (operator expr)) (isequal op1value (eval-expression (operand2 expr) environment throw current-type)))
+      ((eq? '!= (operator expr)) (not (isequal op1value (eval-expression (operand2 expr) environment throw current-type))))
+      ((eq? '< (operator expr)) (< op1value (eval-expression (operand2 expr) environment throw current-type)))
+      ((eq? '> (operator expr)) (> op1value (eval-expression (operand2 expr) environment throw current-type)))
+      ((eq? '<= (operator expr)) (<= op1value (eval-expression (operand2 expr) environment throw current-type)))
+      ((eq? '>= (operator expr)) (>= op1value (eval-expression (operand2 expr) environment throw current-type)))
+      ((eq? '|| (operator expr)) (or op1value (eval-expression (operand2 expr) environment throw current-type)))
+      ((eq? '&& (operator expr)) (and op1value (eval-expression (operand2 expr) environment throw current-type)))
       (else (myerror "Unknown operator:" (operator expr))))))
 
 ; Determines if two values are equal.  We need a special test because there are both boolean and integer types.
@@ -330,7 +330,7 @@
 (define find-instance-closure
   (lambda (instance environment)
     (cond
-      ((not (list? instance)) (lookup instance environment))
+      ((not (list? instance)) (unbox (lookup instance environment)))
       ((eq? 'new (car instance)) (build-instance-closure instance environment))
       (else myerror "Idk if this can happen"))))
 
@@ -737,3 +737,4 @@
       (error-break (display (string-append str (makestr "" vals)))))))
 
 (interpret "test.txt" 'A)
+
