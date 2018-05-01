@@ -173,11 +173,19 @@
       ((number? expr) expr)
       ((eq? expr 'true) #t)
       ((eq? expr 'false) #f)
+<<<<<<< HEAD
       ((eq? 'dot (operator expr)) (eval-dot expr environment throw current-type))
       ((eq? (statement-type expr) 'new) (build-instance-closure expr environment))
       ((eq? 'funcall (operator expr)) (eval-funcall expr environment throw current-type)) ; interpret-funcall is not implemented yet
       ((not (list? expr)) (unbox (lookup expr environment)))
       (else (eval-operator expr environment throw current-type)))))
+=======
+      ((not (list? expr)) (unbox (lookup expr environment)))
+      ((eq? 'dot (operator expr)) (eval-dot expr environment throw))
+      ((eq? (statement-type expr) 'new) (build-instance-closure expr environment))
+      ((eq? 'funcall (operator expr)) (eval-funcall expr environment throw)) ; interpret-funcall is not implemented yet
+      (else (eval-operator expr environment throw)))))
+>>>>>>> 0f9804917d4548ae0876725f6061400948c90597
 
 (define eval-operator
   (lambda (expr environment throw current-type)
@@ -270,17 +278,67 @@
 ; Defines the main method call
 (define main-method '(funcall main))
 
+(define determine-function-class
+  (lambda (instance-closure function-name environment)
+    (function-class-from-closure (lookup (instance-class instance-closure) environment) (instance-class instance-closure) function-name environment)))
+
+(define function-class-from-closure
+  (lambda (class-closure current-class function-name environment)
+    (find-function-class (class-parent class-closure) current-class (class-function-names class-closure) function-name environment)))
+
+(define find-function-class
+  (lambda (parent-class current-class function-list function-name environment)
+    (cond
+      ((null? function-list) (update-finder-to-closure parent-class function-name environment))
+      ((eq? (car function-list) function-name) current-class)
+      (else (find-function-class parent-class current-class (cdr function-list) function-name environment)))))
+
+(define update-finder-to-closure
+  (lambda (current-class function-name environment)
+    (if (null? current-class)
+        (myerror "Function not found")
+        (update-function-finder (lookup current-class environment) current-class function-name environment))))
+
+(define update-function-finder
+  (lambda (class-closure current-class function-name environment)
+    (if (null? current-class)
+        (myerror "Function not found")
+        (find-function-class (class-parent class-closure) current-class (class-function-names class-closure) function-name environment))))
+
 (define function-body
   (lambda (statement environment)
-    (cadr (lookup (cadr statement) environment))))
+    (cadr (function-closure statement environment))))
+    
+(define function-params
+  (lambda (statement environment)
+    (car (function-closure statement environment))))
+
+(define function-closure
+  (lambda (statement environment)
+    (find-function-closure (find-true-type (get-dot-expr statement) environment) (func-name (get-dot-expr statement)) environment)))
+
+(define find-true-type
+  (lambda (dot-expr environment)
+    (determine-function-class (find-instance-closure (instance dot-expr) environment) (func-name dot-expr) environment)))
+
+(define find-function-closure
+  (lambda (true-type function-name environment)
+    (lookup-in-frame function-name (class-function (lookup true-type environment)))))
+
+(define find-instance-closure
+  (lambda (instance environment)
+    (cond
+      ((not (list? instance)) (lookup instance environment))
+      ((eq? 'new (car instance)) (build-instance-closure instance environment))
+      (else myerror "Idk if this can happen"))))
+
+(define get-dot-expr cadr)
+(define instance cadr)
+(define func-name caddr)
 
 (define parameters
   (lambda (statement)
     (cddr statement)))
-
-(define parameter-names
-  (lambda (statement environment)
-    (car (lookup (cadr statement) environment))))
 
 ; Evaluates the parameters
 (define parameter-values
@@ -292,15 +350,16 @@
 ; Creates frame where the names are parameter names and values are parameter values
 (define function-frame
   (lambda (statement environment throw)
-    (if (matching-parameters? (parameter-names statement environment) (parameter-values (parameters statement) environment throw))
-      (cons (parameter-names statement environment) (cons (parameter-values (parameters statement) environment throw) '()))
+    (if (matching-parameters? (function-params statement environment) (parameter-values (parameters statement) environment throw))
+      (cons (function-params statement environment) (cons (parameter-values (parameters statement) environment throw) '()))
       (myerror "Mismatched paramters"))))
 
 ; Gets the static link for a function
 (define get-static-link
   (lambda (name environment)
     (cond
-      ((null? environment) (myerror "function not found: " name)) 
+      ((null? environment) (myerror "function not found: " name))
+      ((and (list? name) (null? (cdr environment))) environment)
       ((exists-in-list? name (caar environment)) environment)
       (else (get-static-link name (pop-frame environment))))))
 
@@ -340,7 +399,7 @@
     (if (exists-in-list? (var-name statement) (class-variable-names class-closure))
       (myerror "Instance variable declared twice.")
       (list (class-parent class-closure)
-            (class-methods class-closure)
+            (class-function class-closure)
             (cons (var-name statement) (class-variable-names class-closure))
             (add-var-val statement class-closure)))))
 
@@ -352,10 +411,10 @@
 
 (define add-function-to-closure
   (lambda (statement class-closure)
-    (if (exists-in-list? (get-function-name statement) (class-method-names class-closure))
+    (if (exists-in-list? (get-function-name statement) (class-function-names class-closure))
       (myerror "Function declared twice.")
       (list (class-parent class-closure) 
-            (add-to-frame (get-function-name statement) (get-function-closure statement) (class-methods class-closure))
+            (add-to-frame (get-function-name statement) (get-function-closure statement) (class-function class-closure))
             (class-variable-names class-closure)
             (class-default-values class-closure)))))
 
@@ -383,15 +442,15 @@
   (lambda (class)
     (car class)))
 
-(define class-method-names
+(define class-function-names
   (lambda (class)
-    (car (class-methods class))))
+    (car (class-function class))))
 
 (define class-method-closure
   (lambda (class)
-    (cadr (class-methods class))))
+    (cadr (class-function class))))
 
-(define class-methods
+(define class-function
   (lambda (class)
     (cadr class)))
 
@@ -517,7 +576,7 @@
   (lambda (var parent-name variable-names variable-values environment)
     (cond
       ((null? variable-names)
-       (value-in-heirarchy var (parent-class (lookup parent-name environment)) (class-variable-names (lookup parent-name environment)) instance-values environment))
+       (value-in-heirarchy var (class-parent (lookup parent-name environment)) (class-variable-names (lookup parent-name environment)) instance-values environment))
       ((eq? var (car variable-names)) (car variable-values))
       (else (value-in-heirarchy var parent-name (cdr variable-names) (cdr variable-values) environment)))))
 
@@ -541,7 +600,7 @@
   (lambda (var val parent-name names values environment)
     (cond
       ((null? names)
-       (update-instance-value-w-parent var val (parent-class (lookup parent-name environment)) (class-variable-names (lookup parent-name environment)) values environment))
+       (update-instance-value-w-parent var val (class-parent (lookup parent-name environment)) (class-variable-names (lookup parent-name environment)) values environment))
       ((eq? var (car names)) (cons val (cdr values)))
       (else (cons (car values) (update-instance-value-w-parent var val parent-name (cdr names) (cdr values) environment))))))
 
@@ -674,7 +733,3 @@
                             str
                             (makestr (string-append str (string-append " " (symbol->string (car vals)))) (cdr vals))))))
       (error-break (display (string-append str (makestr "" vals)))))))
-
-(interpret "test.txt" 'A)
-(lookup-in-instance 'x 'newA (interpret-statement '(var newA (new A)) (interpret-class-list (parser "test.txt") (newenvironment)) '() '() '() '() '()))
-(interpret-statement '(var newA (new A)) (interpret-class-list (parser "test.txt") (newenvironment)) '() '() '() '() '())
