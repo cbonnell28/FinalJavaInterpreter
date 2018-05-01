@@ -725,7 +725,3 @@
                             str
                             (makestr (string-append str (string-append " " (symbol->string (car vals)))) (cdr vals))))))
       (error-break (display (string-append str (makestr "" vals)))))))
-
-(interpret "test.txt" 'A)
-(lookup-in-instance 'x 'newA (interpret-statement '(var newA (new A)) (interpret-class-list (parser "test.txt") (newenvironment)) '() '() '() '() '()))
-(interpret-statement '(var newA (new A)) (interpret-class-list (parser "test.txt") (newenvironment)) '() '() '() '() '())
