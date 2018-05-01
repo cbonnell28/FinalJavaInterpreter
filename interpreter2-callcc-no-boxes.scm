@@ -76,7 +76,7 @@
 
 ; Executes the function then returns the state
 (define interpret-funcall
-  (lambda (function environment)
+  (lambda (function environment current-type)
     environment))
 
 ; Evaluates a function and returns the value
@@ -100,7 +100,7 @@
 ; Updates the environment to add an new binding for a variable
 (define interpret-assign
   (lambda (statement environment throw current-type)
-    (update (get-assign-lhs statement) (eval-expression (get-assign-rhs statement) environment throw) environment)))
+    (update (get-assign-lhs statement) (eval-expression (get-assign-rhs statement) environment throw current-type) environment)))
 
 ; We need to check if there is an else condition.  Otherwise, we evaluate the expression and do the right thing.
 (define interpret-if
@@ -363,7 +363,7 @@
 (define function-frame
   (lambda (statement environment throw current-type)
     (if (matching-parameters? (function-params statement environment) (append (parameter-values (parameters statement) environment throw current-type) (list(find-instance-closure (instance (get-dot-expr statement)) environment))))
-      (cons (function-params statement environment) (cons (append (parameter-values (parameters statement) environment throw current-type) (list(find-instance-closure (instance (get-dot-expr statement)) environment))) '()))
+      (cons (function-params statement environment) (cons (append (parameter-values (parameters statement) environment throw current-type) (list (box (find-instance-closure (instance (get-dot-expr statement)) environment)))) '()))
       (myerror "Mismatched paramters"))))
 
 ; Gets the static link for a function
@@ -660,7 +660,7 @@
   (lambda (var val environment)
     (if (exists? var environment)
         (update-existing var val environment)
-        (myerror "error: variable used but not defined:" var))))
+        (update-in-instance (caddr var) val (cadr var) environment))))
 
 ; Add a new variable/value pair to the frame.
 (define add-to-frame
