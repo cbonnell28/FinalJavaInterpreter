@@ -173,10 +173,10 @@
       ((number? expr) expr)
       ((eq? expr 'true) #t)
       ((eq? expr 'false) #f)
+      ((not (list? expr)) (unbox (lookup expr environment)))
       ((eq? 'dot (operator expr)) (eval-dot expr environment throw))
       ((eq? (statement-type expr) 'new) (build-instance-closure expr environment))
       ((eq? 'funcall (operator expr)) (eval-funcall expr environment throw)) ; interpret-funcall is not implemented yet
-      ((not (list? expr)) (unbox (lookup expr environment)))
       (else (eval-operator expr environment throw)))))
 
 (define eval-operator
@@ -299,15 +299,38 @@
 
 (define function-body
   (lambda (statement environment)
-    (cadr (lookup (cadr statement) environment))))
+    (cadr (function-closure statement environment))))
+    
+(define function-params
+  (lambda (statement environment)
+    (car (function-closure statement environment))))
+
+(define function-closure
+  (lambda (statement environment)
+    (find-function-closure (find-true-type (get-dot-expr statement) environment) (func-name (get-dot-expr statement)) environment)))
+
+(define find-true-type
+  (lambda (dot-expr environment)
+    (determine-function-class (find-instance-closure (instance dot-expr) environment) (func-name dot-expr) environment)))
+
+(define find-function-closure
+  (lambda (true-type function-name environment)
+    (lookup-in-frame function-name (class-function (lookup true-type environment)))))
+
+(define find-instance-closure
+  (lambda (instance environment)
+    (cond
+      ((not (list? instance)) (lookup instance environment))
+      ((eq? 'new (car instance)) (build-instance-closure instance environment))
+      (else myerror "Idk if this can happen"))))
+
+(define get-dot-expr cadr)
+(define instance cadr)
+(define func-name caddr)
 
 (define parameters
   (lambda (statement)
     (cddr statement)))
-
-(define parameter-names
-  (lambda (statement environment)
-    (car (lookup (cadr statement) environment))))
 
 ; Evaluates the parameters
 (define parameter-values
@@ -319,15 +342,16 @@
 ; Creates frame where the names are parameter names and values are parameter values
 (define function-frame
   (lambda (statement environment throw)
-    (if (matching-parameters? (parameter-names statement environment) (parameter-values (parameters statement) environment throw))
-      (cons (parameter-names statement environment) (cons (parameter-values (parameters statement) environment throw) '()))
+    (if (matching-parameters? (function-params statement environment) (parameter-values (parameters statement) environment throw))
+      (cons (function-params statement environment) (cons (parameter-values (parameters statement) environment throw) '()))
       (myerror "Mismatched paramters"))))
 
 ; Gets the static link for a function
 (define get-static-link
   (lambda (name environment)
     (cond
-      ((null? environment) (myerror "function not found: " name)) 
+      ((null? environment) (myerror "function not found: " name))
+      ((and (list? name) (null? (cdr environment))) environment)
       ((exists-in-list? name (caar environment)) environment)
       (else (get-static-link name (pop-frame environment))))))
 
@@ -367,7 +391,7 @@
     (if (exists-in-list? (var-name statement) (class-variable-names class-closure))
       (myerror "Instance variable declared twice.")
       (list (class-parent class-closure)
-            (class-methods class-closure)
+            (class-function class-closure)
             (cons (var-name statement) (class-variable-names class-closure))
             (add-var-val statement class-closure)))))
 
@@ -382,7 +406,7 @@
     (if (exists-in-list? (get-function-name statement) (class-function-names class-closure))
       (myerror "Function declared twice.")
       (list (class-parent class-closure) 
-            (add-to-frame (get-function-name statement) (get-function-closure statement) (class-methods class-closure))
+            (add-to-frame (get-function-name statement) (get-function-closure statement) (class-function class-closure))
             (class-variable-names class-closure)
             (class-default-values class-closure)))))
 
@@ -412,13 +436,13 @@
 
 (define class-function-names
   (lambda (class)
-    (car (class-methods class))))
+    (car (class-function class))))
 
 (define class-method-closure
   (lambda (class)
-    (cadr (class-methods class))))
+    (cadr (class-function class))))
 
-(define class-methods
+(define class-function
   (lambda (class)
     (cadr class)))
 
@@ -697,3 +721,5 @@
                             str
                             (makestr (string-append str (string-append " " (symbol->string (car vals)))) (cdr vals))))))
       (error-break (display (string-append str (makestr "" vals)))))))
+
+(eval-funcall '(funcall (dot (new A) set2) 3 5) (interpret-class-list (parser "test.txt") (newenvironment)) '())
