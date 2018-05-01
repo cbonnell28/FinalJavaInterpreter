@@ -11,7 +11,7 @@
     (call/cc
      (lambda (return)
        (interpret-statement-list (cadr (find-function-closure class-name 'main environment))
-                                  environment
+                                  (cons (newframe) environment)
                                   return invalid-break invalid-continue invalid-throw invalid-current-type)))))
 
 (define interpret-class-list
@@ -363,7 +363,7 @@
 (define function-frame
   (lambda (statement environment throw current-type)
     (if (matching-parameters? (function-params statement environment) (append (parameter-values (parameters statement) environment throw current-type) (list(find-instance-closure (instance (get-dot-expr statement)) environment))))
-      (cons (function-params statement environment) (append (parameter-values (parameters statement) environment throw current-type) (list(find-instance-closure (instance (get-dot-expr statement)) environment))))
+      (cons (function-params statement environment) (cons (append (parameter-values (parameters statement) environment throw current-type) (list(find-instance-closure (instance (get-dot-expr statement)) environment))) '()))
       (myerror "Mismatched paramters"))))
 
 ; Gets the static link for a function
