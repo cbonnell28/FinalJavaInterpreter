@@ -54,6 +54,10 @@
       ((eq? 'try (statement-type statement)) (begin (set-box! throwenv environment)(interpret-try statement environment return break continue throw current-type)))
       (else (myerror "Unknown statement:" (statement-type statement))))))
 
+(define add-this
+  (lambda (statement)
+    (list (car statement) (cadr statement) (list (caddr statement) 'this) (cadddr statement))))
+
 ; Calls the return continuation with the given expression value
 (define interpret-return
   (lambda (statement environment return throw current-type)
