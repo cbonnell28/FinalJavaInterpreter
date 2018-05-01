@@ -4,7 +4,15 @@
 (define interpret
   (lambda (file class-name)
     (scheme->language
-     (eval-funcall main-method (insert 'main (car (cadar (get-class-main class-name (interpret-class-list (parser "test.txt") (newenvironment))))) (interpret-class-list (parser "test.txt") (newenvironment))) invalid-throw invalid-current-type))))
+        (interpret-environment class-name (interpret-class-list (parser "test.txt") (newenvironment))))))
+
+(define interpret-environment
+  (lambda (class-name environment)
+    (call/cc
+     (lambda (return)
+       (interpret-statement-list (cadr (find-function-closure class-name 'main environment))
+                                  environment
+                                  return invalid-break invalid-continue invalid-throw invalid-current-type)))))
 
 (define interpret-class-list
   (lambda (statement-list environment)
@@ -268,7 +276,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ; Defines the main method call
-(define main-method '(funcall main))
+(define main-method
+  (lambda (class-name)
+    (append '(funcall) (list (list 'dot class-name 'main)))))
 
 (define determine-function-class
   (lambda (instance-closure function-name environment)
@@ -726,4 +736,4 @@
                             (makestr (string-append str (string-append " " (symbol->string (car vals)))) (cdr vals))))))
       (error-break (display (string-append str (makestr "" vals)))))))
 
-(eval-funcall '(funcall (dot (new A) set2) 3 5) (interpret-class-list (parser "test.txt") (newenvironment)) '())
+(interpret "test.txt" 'A)
