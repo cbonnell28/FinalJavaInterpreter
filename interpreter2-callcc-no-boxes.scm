@@ -181,10 +181,10 @@
       ((number? expr) expr)
       ((eq? expr 'true) #t)
       ((eq? expr 'false) #f)
+      ((not (list? expr)) (unbox (lookup expr environment)))
       ((eq? 'dot (operator expr)) (eval-dot expr environment throw current-type))
       ((eq? (statement-type expr) 'new) (build-instance-closure expr environment))
       ((eq? 'funcall (operator expr)) (eval-funcall expr environment throw current-type)) ; interpret-funcall is not implemented yet
-      ((not (list? expr)) (unbox (lookup expr environment)))
       (else (eval-operator expr environment throw current-type)))))
 
 (define eval-operator
@@ -353,7 +353,7 @@
 (define function-frame
   (lambda (statement environment throw current-type)
     (if (matching-parameters? (function-params statement environment) (parameter-values (parameters statement) environment throw current-type))
-      (cons (function-params statement environment) (cons (parameter-values (parameters statement) environment throw current-type) '()))
+      (cons (function-params statement environment) (cons (list (parameter-values (parameters statement) environment throw current-type) (find-instance-closure (instance (get-dot-expr statement)) environment)) '()))
       (myerror "Mismatched paramters"))))
 
 ; Gets the static link for a function
@@ -735,6 +735,4 @@
                             str
                             (makestr (string-append str (string-append " " (symbol->string (car vals)))) (cdr vals))))))
       (error-break (display (string-append str (makestr "" vals)))))))
-
 (interpret "test.txt" 'A)
-
